@@ -8,6 +8,7 @@ type RemoteJob = {
   type: string;
   posted: string;
   skills: string[];
+  experience: string;
   description: string;
   source: string;
   url: string;
@@ -27,6 +28,11 @@ function string(value: unknown, fallback = "") {
 function list(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string");
   return typeof value === "string" ? [value] : [];
+}
+
+function experience(value: unknown): string {
+  const entries = list(value);
+  return entries.map(item => item.trim()).filter(Boolean).join(", ") || (typeof value === "string" ? value : "Not specified");
 }
 
 function plainText(value: string) {
@@ -51,7 +57,7 @@ function normalizeRemotive(value: unknown): RemoteJob | null {
     id: `remotive-${id}`, title: string(job.title, "Untitled role"), company: string(job.company_name, "Company not listed"),
     location: string(job.candidate_required_location, "Remote"), remote: "Remote", salary: string(job.salary, "Not listed"),
     type: string(job.job_type, "Not listed").replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase()),
-    posted: dateLabel(job.publication_date), skills: [string(job.category)].filter(Boolean),
+    posted: dateLabel(job.publication_date), skills: [string(job.category)].filter(Boolean), experience: experience(job.seniority),
     description: plainText(string(job.description)), source: "Remotive", url, active: true,
   };
 }
@@ -72,7 +78,7 @@ function normalizeJobicy(value: unknown): RemoteJob | null {
     id: `jobicy-${id}`, title: string(job.jobTitle, "Untitled role"), company: string(job.companyName, "Company not listed"),
     location: string(job.jobGeo, "Remote"), remote: "Remote", salary,
     type: types.join(", ") || "Not listed", posted: dateLabel(job.pubDate),
-    skills: [...list(job.jobIndustry), ...list(job.jobLevel)].slice(0, 5),
+    skills: [...list(job.jobIndustry), ...list(job.jobLevel)].slice(0, 5), experience: experience(job.jobLevel),
     description: plainText(string(job.jobDescription) || string(job.jobExcerpt)), source: "Jobicy", url, active: true,
   };
 }
@@ -95,7 +101,7 @@ function normalizeHimalayas(value: unknown): RemoteJob | null {
   return {
     id: `himalayas-${id}`, title: string(job.title, "Untitled role"), company: string(job.companyName, "Company not listed"),
     location, remote: "Remote", salary, type: string(job.employmentType, "Not listed"), posted: dateLabel(job.pubDate),
-    skills: [...list(job.categories), ...list(job.seniority)].slice(0, 5),
+    skills: [...list(job.categories), ...list(job.seniority)].slice(0, 5), experience: experience(job.seniority),
     description: plainText(string(job.description) || string(job.excerpt)), source: "Himalayas", url, active: true,
   };
 }
@@ -106,11 +112,29 @@ async function fetchJson(url: string, revalidate = 21_600) {
   return response.json() as Promise<unknown>;
 }
 
+async function fetchHimalayasJobs() {
+  const jobs: unknown[] = [];
+  let cursor = "";
+
+  // The public API caps each response at 20 jobs. Read up to five cursor pages
+  // once per day so Himalayas contributes a useful set without excessive polling.
+  for (let page = 0; page < 5; page++) {
+    const query = new URLSearchParams({ limit: "20" });
+    if (cursor) query.set("cursor", cursor);
+    const response = object(await fetchJson(`https://himalayas.app/jobs/api?${query}`, 86_400));
+    if (Array.isArray(response.jobs)) jobs.push(...response.jobs);
+    cursor = string(response.nextCursor);
+    if (!cursor) break;
+  }
+
+  return jobs;
+}
+
 export async function GET() {
   const providers = await Promise.allSettled([
     fetchJson("https://remotive.com/api/remote-jobs?limit=100"),
     fetchJson("https://jobicy.com/api/jobs?count=100"),
-    fetchJson("https://himalayas.app/jobs/api?limit=20", 86_400),
+    fetchHimalayasJobs(),
   ]);
   const jobs: RemoteJob[] = [];
   const availableSources: string[] = [];
@@ -129,8 +153,7 @@ export async function GET() {
   } else errors.push("Jobicy");
 
   if (providers[2].status === "fulfilled") {
-    const rows = object(providers[2].value).jobs;
-    if (Array.isArray(rows)) jobs.push(...rows.map(normalizeHimalayas).filter((job): job is RemoteJob => Boolean(job)));
+    jobs.push(...providers[2].value.map(normalizeHimalayas).filter((job): job is RemoteJob => Boolean(job)));
     availableSources.push("Himalayas");
   } else errors.push("Himalayas");
 
