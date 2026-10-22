@@ -1,6 +1,6 @@
 # Integration setup and limitations
 
-ApplyPilot searches public live remote job feeds from Remotive and Jobicy. Listings link to the originating source, and no job board is scraped. No application is submitted automatically.
+ApplyPilot searches public remote job feeds from Remotive, Jobicy, and Himalayas. Listings link to the originating source, and no job board is scraped. No application is submitted automatically.
 
 ## Supabase
 
@@ -17,9 +17,9 @@ Set `OPENAI_API_KEY` in the server environment and configure Supabase Auth. The 
 
 ## Job sources
 
-The `/api/jobs` route aggregates Remotive's public API and Jobicy's public jobs API. Both are free to use without an API key and return remote roles. Results are cached for up to six hours. Remotive says its public feed can be delayed by 24 hours and recommends no more than four API requests per day. Jobicy's public feed covers jobs from the last seven days and asks integrations to poll no more than once per hour. Each listing retains the source's canonical URL and attribution. Current filters include keyword, location text, remote eligibility, minimum salary, employment type, and sorting; they apply to the fetched feed, so the result set is limited to each feed's first 100 jobs.
+The `/api/jobs` route aggregates the free public APIs from Remotive, Jobicy, and Himalayas; none currently needs an API key. Remotive and Jobicy feeds are cached for up to six hours. Himalayas data refreshes daily and its API allows up to 20 jobs per request. Remotive says listings can be delayed by 24 hours and recommends no more than four API requests per day. Jobicy's public feed covers jobs from the last seven days and asks integrations to poll no more than once per hour. Each listing keeps source attribution and a source link. For Himalayas that link is the API's `applicationLink`, as required by its terms. Current filters include keyword, location text, remote eligibility, minimum salary, employment type, and sorting; filters apply to the results returned by each feed.
 
-The feeds are best-effort: fields such as salary and employment type may be missing, and opening a source link is the way to check whether a role is still active. These sources focus on remote roles and do not provide the full coverage of major job boards.
+The feeds are best-effort: fields such as salary and employment type may be missing, and opening a source link is the way to check whether a role is still active. Himalayas salary data may use hourly, weekly, fortnightly, monthly, or annual pay periods; the salary filter skips non-annual salary figures rather than treating them as annual. These sources focus on remote roles and do not provide the full coverage of major job boards.
 
 ## Submission workflow
 

@@ -36,7 +36,7 @@ function plainText(value: string) {
 }
 
 function dateLabel(value: unknown) {
-  const date = new Date(string(value));
+  const date = new Date(typeof value === "number" ? value * 1000 : string(value));
   if (!Number.isFinite(date.getTime())) return "Recently";
   const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86_400_000));
   return days === 0 ? "Today" : `${days} day${days === 1 ? "" : "s"} ago`;
@@ -64,7 +64,9 @@ function normalizeJobicy(value: unknown): RemoteJob | null {
   const min = typeof job.salaryMin === "number" ? job.salaryMin : null;
   const max = typeof job.salaryMax === "number" ? job.salaryMax : null;
   const currency = string(job.salaryCurrency, "USD");
-  const salary = min !== null && max !== null ? `${currency} ${min.toLocaleString()}–${max.toLocaleString()}` : min !== null ? `${currency} ${min.toLocaleString()}+` : "Not listed";
+  const period = string(job.salaryPeriod, "yearly");
+  const periodLabel = /^(annual|yearly)$/i.test(period) ? period : `per ${period}`;
+  const salary = min !== null && max !== null ? `${currency} ${min.toLocaleString()}–${max.toLocaleString()} ${periodLabel}` : min !== null ? `${currency} ${min.toLocaleString()}+ ${periodLabel}` : "Not listed";
   const types = list(job.jobType);
   return {
     id: `jobicy-${id}`, title: string(job.jobTitle, "Untitled role"), company: string(job.companyName, "Company not listed"),
@@ -75,8 +77,31 @@ function normalizeJobicy(value: unknown): RemoteJob | null {
   };
 }
 
-async function fetchJson(url: string) {
-  const response = await fetch(url, { next: { revalidate: 21_600 }, headers: { Accept: "application/json" } });
+function normalizeHimalayas(value: unknown): RemoteJob | null {
+  const job = object(value);
+  const id = string(job.guid);
+  const url = string(job.applicationLink);
+  if (!id || !url.startsWith("https://himalayas.app/")) return null;
+  const min = typeof job.minSalary === "number" ? job.minSalary : null;
+  const max = typeof job.maxSalary === "number" ? job.maxSalary : null;
+  const currency = string(job.currency, "USD");
+  const period = string(job.salaryPeriod, "annual");
+  const periodLabel = /^(annual|yearly)$/i.test(period) ? period : `per ${period}`;
+  const salary = min !== null && max !== null ? `${currency} ${min.toLocaleString()}–${max.toLocaleString()} ${periodLabel}` : min !== null ? `${currency} ${min.toLocaleString()}+ ${periodLabel}` : "Not listed";
+  const restrictions = Array.isArray(job.locationRestrictions) ? job.locationRestrictions : [];
+  const locations = restrictions.map(item => string(object(item).name) || string(object(item).alpha2) || string(item)).filter(Boolean);
+  const timezones = list(job.timezoneRestrictions);
+  const location = locations.length ? locations.join(", ") : timezones.length ? `Worldwide · ${timezones.join(", ")}` : "Worldwide";
+  return {
+    id: `himalayas-${id}`, title: string(job.title, "Untitled role"), company: string(job.companyName, "Company not listed"),
+    location, remote: "Remote", salary, type: string(job.employmentType, "Not listed"), posted: dateLabel(job.pubDate),
+    skills: [...list(job.categories), ...list(job.seniority)].slice(0, 5),
+    description: plainText(string(job.description) || string(job.excerpt)), source: "Himalayas", url, active: true,
+  };
+}
+
+async function fetchJson(url: string, revalidate = 21_600) {
+  const response = await fetch(url, { next: { revalidate }, headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error(`Provider returned ${response.status}`);
   return response.json() as Promise<unknown>;
 }
@@ -85,6 +110,7 @@ export async function GET() {
   const providers = await Promise.allSettled([
     fetchJson("https://remotive.com/api/remote-jobs?limit=100"),
     fetchJson("https://jobicy.com/api/jobs?count=100"),
+    fetchJson("https://himalayas.app/jobs/api?limit=20", 86_400),
   ]);
   const jobs: RemoteJob[] = [];
   const availableSources: string[] = [];
@@ -101,6 +127,12 @@ export async function GET() {
     if (Array.isArray(rows)) jobs.push(...rows.map(normalizeJobicy).filter((job): job is RemoteJob => Boolean(job)));
     availableSources.push("Jobicy");
   } else errors.push("Jobicy");
+
+  if (providers[2].status === "fulfilled") {
+    const rows = object(providers[2].value).jobs;
+    if (Array.isArray(rows)) jobs.push(...rows.map(normalizeHimalayas).filter((job): job is RemoteJob => Boolean(job)));
+    availableSources.push("Himalayas");
+  } else errors.push("Himalayas");
 
   const unique = [...new Map(jobs.map(job => [job.id, job])).values()];
   return Response.json({ jobs: unique, sources: availableSources, unavailableSources: errors });

@@ -1,6 +1,6 @@
 # ApplyPilot AI
 
-An approval-first job search workspace built with Next.js, TypeScript, Tailwind CSS, Zod, and OpenAI. The app searches free public remote job feeds from Remotive and Jobicy without API keys. Profile editing, PDF/DOCX text extraction, draft materials, and a local application queue are also available in the browser.
+An approval-first job search workspace built with Next.js, TypeScript, Tailwind CSS, Zod, and OpenAI. The app searches free public remote job feeds from Remotive, Jobicy, and Himalayas without API keys. Profile editing, PDF/DOCX text extraction, draft materials, and a local application queue are also available in the browser.
 
 ## Run locally
 
